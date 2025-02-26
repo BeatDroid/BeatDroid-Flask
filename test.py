@@ -1,0 +1,3 @@
+TrackMetadata(name='Apocalypse', artist='Cigarettes After Sex', album='Cigarettes After Sex', released='June 09, 2017', duration='04:50', image='https://i.scdn.co/image/ab67616d0000b273dfed999f959177dfc4f33cdc', label='Partisan Records', id='1oAwsWBovWRIp7qLMGPIet')
+
+TrackMetadata(name='The Night We Met', artist='Lord Huron', album='Strange Trails', released='April 06, 2015', duration='03:28', image='https://i.scdn.co/image/ab67616d0000b27317875a0610c23d8946454583', label='Play It Again Sam', id='3hRV0jL3vUpRrcy398teAU')
