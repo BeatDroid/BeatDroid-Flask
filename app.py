@@ -11,8 +11,10 @@ from flask_caching import Cache
 from flasgger import Swagger
 import logging
 
+# Load environment variables
 dotenv.load_dotenv()
 
+# Initialize Flask app
 app = Flask(__name__)
 
 # Configure logging
@@ -25,11 +27,15 @@ SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 if not SPOTIFY_CLIENT_ID or not SPOTIFY_CLIENT_SECRET:
     raise EnvironmentError("SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set in the environment variables.")
 
-# Store API keys in memory (for demonstration; use a database in production)
+# In-memory API key storage (use a database in production)
 api_keys = {}
+
+# Directory setup
 DOWNLOAD_DIR = "./downloads"
 try:
     os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+    os.makedirs(os.path.join(DOWNLOAD_DIR, "tracks"), exist_ok=True)
+    os.makedirs(os.path.join(DOWNLOAD_DIR, "albums"), exist_ok=True)
     logging.info(f"Download directory created at {os.path.abspath(DOWNLOAD_DIR)}")
 except OSError as e:
     logging.error(f"Failed to create download directory {DOWNLOAD_DIR}: {e}")
@@ -47,7 +53,7 @@ limiter = Limiter(get_remote_address, app=app, default_limits=["10 per minute"])
 app.config["CACHE_TYPE"] = "simple"
 cache = Cache(app)
 
-# Initialize Swagger
+# Initialize Swagger for API documentation
 swagger = Swagger(app)
 
 # Middleware to require API key
@@ -60,6 +66,7 @@ def require_api_key(f):
         return f(*args, **kwargs)
     return decorated_function
 
+# Endpoint to generate an API key
 @app.route('/get_api_key', methods=['POST'])
 def get_api_key():
     username = request.json.get("username")
@@ -70,6 +77,113 @@ def get_api_key():
     api_keys[api_key] = username
     return jsonify({"message": "API key generated successfully!", "api_key": api_key})
 
+# Album Poster Generation Endpoint
+@app.route('/generate_album_poster', methods=['GET'])
+def generate_album_poster():
+    """
+    Generate a poster for an album with a customizable theme and optional parameters.
+    ---
+    parameters:
+      - name: album_name
+        in: query
+        type: string
+        required: true
+        description: The name of the album
+      - name: artist_name
+        in: query
+        type: string
+        required: true
+        description: The name of the artist
+      - name: theme
+        in: query
+        type: string
+        required: false
+        default: Light
+        description: The theme for the poster (e.g., Light, Dark)
+      - name: indexing
+        in: query
+        type: boolean
+        required: false
+        default: False
+        description: Whether to include track indexing on the poster
+      - name: accent
+        in: query
+        type: boolean
+        required: false
+        default: False
+        description: Whether to include an accent color from the album cover
+      - name: custom_cover
+        in: query
+        type: string
+        required: false
+        description: URL or path to a custom cover image
+    responses:
+      200:
+        description: Album poster generated successfully
+        schema:
+          type: object
+          properties:
+            message:
+              type: string
+              example: "Album poster generated successfully!"
+            poster_url:
+              type: string
+              example: "http://localhost:5000/get_poster/albums/album_poster_file.jpg"
+      400:
+        description: Invalid input (missing album_name or artist_name)
+      404:
+        description: Album not found
+      500:
+        description: Server error during poster generation
+    """
+    # Extract query parameters
+    album_name = request.args.get('album_name')
+    artist_name = request.args.get('artist_name')
+    theme = request.args.get('theme', 'Light')  # Default to 'Light'
+    indexing = request.args.get('indexing', 'False').lower() == 'true'
+    accent = request.args.get('accent', 'False').lower() == 'true'
+    custom_cover = request.args.get('custom_cover')
+
+    # Validate required parameters
+    if not album_name or not artist_name:
+        return jsonify({"error": "Please provide both album_name and artist_name"}), 400
+
+    # Create a unique cache key based on all parameters
+    cache_key = f"album_poster_{album_name}_{artist_name}_{theme}_{indexing}_{accent}_{custom_cover}"
+    cached_poster = cache.get(cache_key)
+    if cached_poster:
+        logging.info(f"Serving cached album poster: {cached_poster}")
+        return jsonify({"message": "Album poster retrieved from cache!", "poster_url": cached_poster})
+
+    # Fetch album metadata using Spotify API
+    try:
+        albums = sp.get_album(f"{album_name} - {artist_name}", limit=1, shuffle=False)
+        if not albums:
+            return jsonify({"error": "Album not found"}), 404
+        metadata = albums[0]  # Use the first (most relevant) album
+    except Exception as e:
+        logging.error(f"Error fetching album metadata: {str(e)}")
+        return jsonify({"error": "Failed to fetch album metadata", "details": str(e)}), 500
+
+    # Generate and save the album poster
+    try:
+        save_dir = os.path.join(DOWNLOAD_DIR, "albums")
+        poster_path = ps.album(metadata, save_dir=save_dir, theme=theme, indexing=indexing, accent=accent, custom_cover=custom_cover)
+        
+        # Generate the poster URL
+        poster_rel_path = os.path.relpath(poster_path, DOWNLOAD_DIR)
+        poster_url = f"http://{request.host}/get_poster/{poster_rel_path}"
+        
+        # Cache the result for 1 hour
+        cache.set(cache_key, poster_url, timeout=3600)
+        
+        logging.info(f"Generated album poster URL: {poster_url}")
+        return jsonify({"message": "Album poster generated successfully!", "poster_url": poster_url})
+    except Exception as e:
+        logging.error(f"Error generating album poster: {str(e)}")
+        return jsonify({"error": "Failed to generate album poster", "details": str(e)}), 500
+
+# Track Poster Generation Endpoint
 @app.route('/generate_poster', methods=['POST'])
 def generate_poster():
     """
@@ -94,17 +208,17 @@ def generate_poster():
         description: The theme for the poster (e.g., Light, Dark)
     responses:
       200:
-        description: Poster generated successfully.
+        description: Poster generated successfully
       400:
-        description: Invalid input or theme.
+        description: Invalid input
       404:
-        description: Track or lyrics not found.
+        description: Track or lyrics not found
       500:
-        description: Server error.
+        description: Server error
     """
     track_name = request.args.get('track_name')
     artist_name = request.args.get('artist_name')
-    theme = request.args.get('theme', 'Light')  # Default to 'Light' if not provided
+    theme = request.args.get('theme', 'Light')
     
     if not track_name or not artist_name:
         return jsonify({"error": "Please provide both track_name and artist_name"}), 400
@@ -129,9 +243,11 @@ def generate_poster():
     )
     
     try:
-        poster_path = ps.track(metadata, highlighted_lyrics, DOWNLOAD_DIR, theme=theme)
-        poster_filename = os.path.basename(poster_path)
-        poster_url = f"http://{request.host}/get_poster/{poster_filename}"
+        save_dir = os.path.join(DOWNLOAD_DIR, "tracks")
+        poster_path = ps.track(metadata, highlighted_lyrics, save_dir=save_dir, theme=theme)
+        poster_rel_path = os.path.relpath(poster_path, DOWNLOAD_DIR)
+        poster_url = f"http://{request.host}/get_poster/{poster_rel_path}"
+        
         cache.set(cache_key, poster_url, timeout=3600)
         logging.info(f"Poster URL: {poster_url}")
         return jsonify({"message": "Poster generated successfully!", "poster_url": poster_url})
@@ -139,7 +255,8 @@ def generate_poster():
         logging.error(f"Error generating poster: {str(e)}")
         return jsonify({"error": "Failed to generate poster", "details": str(e)}), 500
 
-@app.route('/get_poster/<filename>')
+# Serve Poster Files
+@app.route('/get_poster/<path:filename>')
 @require_api_key
 def get_poster(filename):
     try:
@@ -147,10 +264,12 @@ def get_poster(filename):
     except FileNotFoundError:
         return jsonify({"error": "Poster file not found"}), 404
 
+# Simple Greeting Endpoint
 @app.route('/hello', methods=['GET'])
 def greet_user():
     return jsonify({"message": "Welcome!"})
 
+# Error Handlers
 @app.errorhandler(400)
 def bad_request(error):
     return jsonify({"error": "Bad Request", "message": str(error)}), 400
