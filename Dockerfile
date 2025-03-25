@@ -1,17 +1,13 @@
-# Use an official Python runtime as a parent image
-FROM python:3.10
-
-# Set the working directory in the container
+# Stage 1: Build
+FROM python:3.10-slim AS builder
 WORKDIR /app
-
-# Copy the current directory contents into the container at /app
-COPY . /app
-
-# Install dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose port 5000 for Flask
+# Stage 2: Final Image
+FROM python:3.10-slim
+WORKDIR /app
+COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
+COPY . .
 EXPOSE 5000
-
-# Command to run the application
 CMD ["python", "app.py"]
