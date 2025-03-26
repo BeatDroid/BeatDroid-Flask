@@ -64,7 +64,7 @@ class Poster:
                 raise
 
             name = filename(metadata.name, metadata.artist)
-            poster_path = save_path / f"{name}.jpg"
+            poster_path = save_path / name
             try:
                 poster.save(poster_path)
                 logging.info(f"✨ Poster for {metadata.name} by {metadata.artist} saved to {poster_path}")
@@ -105,7 +105,7 @@ class Poster:
                 raise
 
             name = filename(metadata.name, metadata.artist)
-            poster_path = save_path / f"{name}.jpg"
+            poster_path = save_path / name
             try:
                 poster.save(poster_path)
                 logging.info(f"✨ Album poster for {metadata.name} by {metadata.artist} saved to {poster_path}")

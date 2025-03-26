@@ -78,7 +78,7 @@ def get_api_key():
     return jsonify({"message": "API key generated successfully!", "api_key": api_key})
 
 # Album Poster Generation Endpoint
-@app.route('/generate_album_poster', methods=['GET'])
+@app.route('/generate_album_poster', methods=['POST'])
 def generate_album_poster():
     """
     Generate a poster for an album with a customizable theme and optional parameters.
@@ -184,8 +184,8 @@ def generate_album_poster():
         return jsonify({"error": "Failed to generate album poster", "details": str(e)}), 500
 
 # Track Poster Generation Endpoint
-@app.route('/generate_poster', methods=['POST'])
-def generate_poster():
+@app.route('/generate_track_poster', methods=['POST'])
+def generate_track_poster():
     """
     Generate a poster for a track with a customizable theme.
     ---
