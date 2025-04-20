@@ -1,3 +1,5 @@
 .env
 
 *.png
+cert.pem
+key.pem
