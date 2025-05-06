@@ -10,6 +10,7 @@ from flask_caching import Cache
 from flasgger import Swagger
 from poster import Poster
 from BeatPrints import lyrics, spotify
+import base64
 
 # Load environment variables
 dotenv.load_dotenv()
@@ -158,6 +159,7 @@ def generate_track_endpoint():
     data = request.get_json() or {}
     track_name = data.get('track_name')
     artist_name = data.get('artist_name')
+    theme = data.get('theme', 'Light')
 
     # Validate the required parameters
     if not track_name or not artist_name:
@@ -165,27 +167,38 @@ def generate_track_endpoint():
 
     save_dir = os.path.join(app.config['DOWNLOAD_DIR'], 'tracks')
     try:
-        # Fetch track metadata
-        search_results = sp.get_track(f"{track_name} - {artist_name}", limit=1)
+        # Query Spotify API
+        query = f"track:{track_name} artist:{artist_name}"
+        logging.info(f"Querying Spotify API with: {query}")
+        search_results = sp.get_track(query, limit=1)
+        logging.info(f"Spotify API response: {search_results}")
+
+        # Handle empty results
         if not search_results:
             logging.error(f"No track found for {track_name} by {artist_name}")
             return jsonify(error=f"No track found for {track_name} by {artist_name}"), 404
 
         track = search_results[0]
+        # Fetch lyrics
         lyrics_text = ly.get_lyrics(track)
+        if not lyrics_text:
+            logging.error(f"No lyrics found for {track_name} by {artist_name}")
+            return jsonify(error='No lyrics could be retrieved for this track'), 404
 
-        # Generate the track poster
+        # Generate poster
         local_path = ps.track(
-            track,
-            lyrics_text,
+            metadata=track,
+            lyrics=lyrics_text,
             save_dir=save_dir,
-            theme=data.get('theme', 'Light')
+            theme=theme,
+            accent_color='Light'
         )
+
     except Exception as e:
-        logging.error(f"Track poster generation error: {e}")
+        logging.error(f"Track poster generation error: {e}", exc_info=True)
         return jsonify(error='Failed to generate track poster', details=str(e)), 500
 
-    # Generate the download URL
+    # Build download URL
     rel_path = os.path.relpath(local_path, app.config['DOWNLOAD_DIR'])
     download_url = f"{request.url_root.rstrip('/')}/api/v1/get_poster/{rel_path}"
     return jsonify(message='Track poster generated!', url=download_url), 200
@@ -194,11 +207,14 @@ def generate_track_endpoint():
 @app.route('/api/v1/get_poster/<path:filename>', methods=['GET', 'OPTIONS'])
 @jwt_required()
 def get_poster(filename):
-    """Serve generated poster files"""
+    """Serve generated poster files via Base64"""
     if request.method == 'OPTIONS':
         return '', 204
     try:
-        return send_from_directory(app.config['DOWNLOAD_DIR'], filename, as_attachment=True)
+        filepath = os.path.join(app.config['DOWNLOAD_DIR'], filename)
+        with open(filepath, 'rb') as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+        return jsonify(image=encoded_string), 200
     except FileNotFoundError:
         return jsonify(error='File not found'), 404
 
