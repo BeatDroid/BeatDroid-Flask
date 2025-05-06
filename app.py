@@ -28,6 +28,16 @@ def add_cors_headers(response):
     return response
 
 app.after_request(add_cors_headers)
+@app.before_request
+def log_request_info():
+    """Log details of every incoming request"""
+    logging.info(f"Request Method: {request.method}")
+    logging.info(f"Request URL: {request.url}")
+    logging.info(f"Request Headers: {dict(request.headers)}")
+    if request.is_json:
+        logging.info(f"Request JSON Body: {request.get_json()}")
+    else:
+        logging.info("Request Body: Not JSON or empty")
 
 # Configuration
 app.config.update({
@@ -37,6 +47,8 @@ app.config.update({
     "CACHE_REDIS_URL": os.getenv("REDIS_URL", "redis://localhost:6379/1"),
     "DOWNLOAD_DIR": os.getenv("DOWNLOAD_DIR", "/tmp/beatprints_downloads")
 })
+
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = False
 
 # Ensure download directories exist
 download_dir = app.config['DOWNLOAD_DIR']
