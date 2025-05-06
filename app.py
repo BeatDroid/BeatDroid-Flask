@@ -2,8 +2,8 @@ import os
 import dotenv
 import logging
 from flask import Flask, request, jsonify, send_from_directory
-# Removed flask_cors dependency to avoid missing module error
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required
+from flask_sqlalchemy import SQLAlchemy
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_caching import Cache
@@ -42,13 +42,14 @@ def log_request_info():
 # Configuration
 app.config.update({
     "JWT_SECRET_KEY": os.getenv("JWT_SECRET_KEY", "super-secret"),
+    "SQLALCHEMY_DATABASE_URI": "sqlite:///devices.db",
+    "SQLALCHEMY_TRACK_MODIFICATIONS": False,
+    "JWT_ACCESS_TOKEN_EXPIRES": False,  # Token never expires
     "RATELIMIT_STORAGE_URI": os.getenv("REDIS_URL", "redis://localhost:6379/0"),
     "CACHE_TYPE": "redis",
     "CACHE_REDIS_URL": os.getenv("REDIS_URL", "redis://localhost:6379/1"),
     "DOWNLOAD_DIR": os.getenv("DOWNLOAD_DIR", "/tmp/beatprints_downloads")
 })
-
-app.config["JWT_ACCESS_TOKEN_EXPIRES"] = False
 
 # Ensure download directories exist
 download_dir = app.config['DOWNLOAD_DIR']
@@ -56,10 +57,21 @@ os.makedirs(os.path.join(download_dir, 'albums'), exist_ok=True)
 os.makedirs(os.path.join(download_dir, 'tracks'), exist_ok=True)
 
 # Initialize extensions
+db = SQLAlchemy(app)
 jwt = JWTManager(app)
 limiter = Limiter(get_remote_address, app=app, default_limits=["100 per hour"])
 cache = Cache(app)
 swagger = Swagger(app)
+
+# Device model
+class Device(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    device_id = db.Column(db.String(255), unique=True, nullable=False)
+    token = db.Column(db.String(1024), nullable=False)
+
+# Create the database tables
+with app.app_context():
+    db.create_all()
 
 # Business logic components
 ly = lyrics.Lyrics()
@@ -72,16 +84,33 @@ sp = spotify.Spotify(
 # --------- Authentication ---------
 @app.route('/api/v1/auth/login', methods=['POST', 'OPTIONS'])
 def login():
-    """Authenticate and return JWT token"""
+    """Authenticate and return JWT token based on device ID"""
     if request.method == 'OPTIONS':
         return '', 204
+
+    # Get the device ID from the request
     data = request.get_json() or {}
-    username = data.get('username')
-    password = data.get('password')  # TODO: verify credentials
-    if not username or not password:
-        return jsonify(error="Missing credentials"), 400
-    access_token = create_access_token(identity=username)
-    return jsonify(access_token=access_token), 200
+    device_id = data.get('device_id')
+
+    # Validate the device ID
+    if not device_id:
+        return jsonify(error="Missing device_id"), 400
+
+    # Check if the device ID already exists in the database
+    device = Device.query.filter_by(device_id=device_id).first()
+
+    if device:
+        # If the device exists, return the existing token
+        logging.info(f"Device {device_id} already exists. Returning existing token.")
+        return jsonify(access_token=device.token), 200
+    else:
+        # If the device does not exist, create a new token and store it
+        access_token = create_access_token(identity=device_id)
+        new_device = Device(device_id=device_id, token=access_token)
+        db.session.add(new_device)
+        db.session.commit()
+        logging.info(f"New device {device_id} registered.")
+        return jsonify(access_token=access_token), 200
 
 # --------- Poster Generation (Synchronous) ---------
 @app.route('/api/v1/generate_album_poster', methods=['POST', 'OPTIONS'])
@@ -152,6 +181,12 @@ def get_poster(filename):
         return send_from_directory(app.config['DOWNLOAD_DIR'], filename, as_attachment=True)
     except FileNotFoundError:
         return jsonify(error='File not found'), 404
+
+# --------- Protected Endpoint Example ---------
+@app.route('/api/v1/protected', methods=['GET'])
+@jwt_required()
+def protected():
+    return jsonify(message="This is a protected route.")
 
 # --------- Error Handlers ---------
 @app.errorhandler(404)
