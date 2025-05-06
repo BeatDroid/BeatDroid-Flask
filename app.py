@@ -13,7 +13,7 @@ from BeatPrints import lyrics, spotify
 
 # Load environment variables
 dotenv.load_dotenv()
-
+ 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -48,7 +48,9 @@ app.config.update({
     "RATELIMIT_STORAGE_URI": os.getenv("REDIS_URL", "redis://localhost:6379/0"),
     "CACHE_TYPE": "redis",
     "CACHE_REDIS_URL": os.getenv("REDIS_URL", "redis://localhost:6379/1"),
-    "DOWNLOAD_DIR": os.getenv("DOWNLOAD_DIR", "/tmp/beatprints_downloads")
+    "DOWNLOAD_DIR": os.getenv("DOWNLOAD_DIR", "/tmp/beatprints_downloads"),
+    'SQLALCHEMY_ECHO' : True
+
 })
 
 # Ensure download directories exist
@@ -101,7 +103,7 @@ def login():
 
     if device:
         # If the device exists, return the existing token
-        logging.info(f"Device {device_id} already exists. Returning existing token.")
+        logging.info(f"Device {device_id} already existss. Returning existing token.")
         return jsonify(access_token=device.token), 200
     else:
         # If the device does not exist, create a new token and store it
