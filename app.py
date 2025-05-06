@@ -150,15 +150,31 @@ def generate_track_endpoint():
     """Generate track poster synchronously and return download URL"""
     if request.method == 'OPTIONS':
         return '', 204
+
+    # Log the incoming request
+    logging.info(f"Request JSON Body: {request.get_json()}")
+
+    # Get the JSON data
     data = request.get_json() or {}
     track_name = data.get('track_name')
     artist_name = data.get('artist_name')
+
+    # Validate the required parameters
     if not track_name or not artist_name:
         return jsonify(error='track_name and artist_name required'), 400
+
     save_dir = os.path.join(app.config['DOWNLOAD_DIR'], 'tracks')
     try:
-        track = sp.get_track(f"{track_name} - {artist_name}", limit=1)[0]
+        # Fetch track metadata
+        search_results = sp.get_track(f"{track_name} - {artist_name}", limit=1)
+        if not search_results:
+            logging.error(f"No track found for {track_name} by {artist_name}")
+            return jsonify(error=f"No track found for {track_name} by {artist_name}"), 404
+
+        track = search_results[0]
         lyrics_text = ly.get_lyrics(track)
+
+        # Generate the track poster
         local_path = ps.track(
             track,
             lyrics_text,
@@ -168,6 +184,8 @@ def generate_track_endpoint():
     except Exception as e:
         logging.error(f"Track poster generation error: {e}")
         return jsonify(error='Failed to generate track poster', details=str(e)), 500
+
+    # Generate the download URL
     rel_path = os.path.relpath(local_path, app.config['DOWNLOAD_DIR'])
     download_url = f"{request.url_root.rstrip('/')}/api/v1/get_poster/{rel_path}"
     return jsonify(message='Track poster generated!', url=download_url), 200

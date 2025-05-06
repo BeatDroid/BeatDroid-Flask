@@ -1,47 +1,50 @@
-# BeatPrints API
+# 🎵 BeatPrints API
 
-A Flask-based service for generating custom album and track posters. Includes JWT authentication, rate limiting, caching, and synchronous poster generation.
+BeatPrints is a Flask-based API that allows users to generate **album posters** and **track posters** using metadata from Spotify and lyrics from external sources. It also includes authentication using JWT tokens and rate-limiting for secure and efficient usage.
 
-## Features
+---
 
-- **JWT Authentication**: Secure endpoints with JSON Web Tokens.
-- **Rate Limiting**: Protect your API with configurable limits (using Redis).
-- **Caching**: Redis-based caching for metadata lookup.
-- **Poster Generation**: Generate album and track posters on demand.
-- **CORS Support**: Simple CORS headers for cross-origin requests.
-- **Swagger UI**: Auto-generated API documentation.
+## 🚀 Features
 
-## Prerequisites
+- **Authentication**: Secure login using device IDs with JWT tokens that never expire.
+- **Poster Generation**:
+  - Generate **album posters** with customizable themes.
+  - Generate **track posters** with lyrics.
+- **Rate Limiting**: Prevent abuse with configurable request limits.
+- **Caching**: Redis-based caching for faster responses.
+- **File Serving**: Download generated posters directly.
+- **API Documentation**: Swagger integration for interactive API exploration.
 
-- Python 3.8+
-- Redis server running (default: `redis://localhost:6379`)
-- Spotify API credentials (client ID & secret)
+---
 
-## Installation
+## 🛠️ Setup Instructions
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/yourorg/beatprints.git
-   cd beatprints
-   ```
+### **1. Clone the Repository**
+```bash
+git clone https://github.com/<your-username>/BeatPrints.git
+cd BeatPrints
+```
 
-2. **Create and activate a virtual environment**
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
+### **2. Create and Activate a Virtual Environment**
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
 
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
+### **3. Install Dependencies**
+```bash
+pip install -r requirements.txt
+```
 
-4. **Copy `.env.example` to `.env`** and set values:
-   ```bash
-   cp .env.example .env
-   ```
+### **4. Configure Environment Variables**
+Copy `.env.example` to `.env` and set the following values:
+```bash
+cp .env.example .env
+```
 
-## Environment Variables
+---
+
+## 🔧 Environment Variables
 
 Populate your `.env` file with:
 
@@ -60,7 +63,9 @@ DOWNLOAD_DIR=/tmp/beatprints_downloads
 - `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`: Spotify API credentials  
 - `DOWNLOAD_DIR`: Directory to store generated posters
 
-## Running Locally
+---
+
+## 🏃 Running Locally
 
 ```bash
 # Activate virtualenv if not already
@@ -75,7 +80,9 @@ env FLASK_APP=app.py flask run --host=0.0.0.0 --port=5000
 
 The API will be available at `http://localhost:5000/api/v1/`.
 
-## API Endpoints
+---
+
+## 📖 API Endpoints
 
 ### 1. Authentication
 
@@ -129,11 +136,15 @@ Authorization: Bearer <JWT_TOKEN>
 ```
 Responds with the image file as an attachment.
 
-## Swagger UI
+---
+
+## 📜 Swagger UI
 
 Visit `http://localhost:5000/apidocs` to explore the API interactively.
 
-## License
+---
+
+## 📄 License
 
 [MIT License](LICENSE)
 
