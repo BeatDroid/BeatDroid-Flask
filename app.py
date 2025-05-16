@@ -14,7 +14,7 @@ import base64
 
 # Load environment variables
 dotenv.load_dotenv()
- 
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -31,7 +31,6 @@ def add_cors_headers(response):
 app.after_request(add_cors_headers)
 @app.before_request
 def log_request_info():
-    """Log details of every incoming request"""
     logging.info(f"Request Method: {request.method}")
     logging.info(f"Request URL: {request.url}")
     logging.info(f"Request Headers: {dict(request.headers)}")
@@ -45,19 +44,18 @@ app.config.update({
     "JWT_SECRET_KEY": os.getenv("JWT_SECRET_KEY", "super-secret"),
     "SQLALCHEMY_DATABASE_URI": "sqlite:///devices.db",
     "SQLALCHEMY_TRACK_MODIFICATIONS": False,
-    "JWT_ACCESS_TOKEN_EXPIRES": False,  # Token never expires
+    "JWT_ACCESS_TOKEN_EXPIRES": False,
     "RATELIMIT_STORAGE_URI": os.getenv("REDIS_URL", "redis://localhost:6379/0"),
     "CACHE_TYPE": "redis",
     "CACHE_REDIS_URL": os.getenv("REDIS_URL", "redis://localhost:6379/1"),
     "DOWNLOAD_DIR": os.getenv("DOWNLOAD_DIR", "/tmp/beatprints_downloads"),
-    'SQLALCHEMY_ECHO' : True
-
+    'SQLALCHEMY_ECHO': False
+    
 })
 
 # Ensure download directories exist
-download_dir = app.config['DOWNLOAD_DIR']
-os.makedirs(os.path.join(download_dir, 'albums'), exist_ok=True)
-os.makedirs(os.path.join(download_dir, 'tracks'), exist_ok=True)
+os.makedirs(os.path.join(app.config['DOWNLOAD_DIR'], 'albums'), exist_ok=True)
+os.makedirs(os.path.join(app.config['DOWNLOAD_DIR'], 'tracks'), exist_ok=True)
 
 # Initialize extensions
 db = SQLAlchemy(app)
@@ -84,30 +82,21 @@ sp = spotify.Spotify(
     os.getenv("SPOTIFY_CLIENT_SECRET")
 )
 
-# --------- Authentication ---------
 @app.route('/api/v1/auth/login', methods=['POST', 'OPTIONS'])
 def login():
-    """Authenticate and return JWT token based on device ID"""
     if request.method == 'OPTIONS':
         return '', 204
 
-    # Get the device ID from the request
     data = request.get_json() or {}
     device_id = data.get('device_id')
-
-    # Validate the device ID
     if not device_id:
         return jsonify(error="Missing device_id"), 400
 
-    # Check if the device ID already exists in the database
     device = Device.query.filter_by(device_id=device_id).first()
-
     if device:
-        # If the device exists, return the existing token
-        logging.info(f"Device {device_id} already existss. Returning existing token.")
+        logging.info(f"Device {device_id} already exists. Returning existing token.")
         return jsonify(access_token=device.token), 200
     else:
-        # If the device does not exist, create a new token and store it
         access_token = create_access_token(identity=device_id)
         new_device = Device(device_id=device_id, token=access_token)
         db.session.add(new_device)
@@ -115,77 +104,102 @@ def login():
         logging.info(f"New device {device_id} registered.")
         return jsonify(access_token=access_token), 200
 
-# --------- Poster Generation (Synchronous) ---------
 @app.route('/api/v1/generate_album_poster', methods=['POST', 'OPTIONS'])
 @jwt_required()
 def generate_album_endpoint():
-    """Generate album poster synchronously and return download URL"""
     if request.method == 'OPTIONS':
         return '', 204
+
     data = request.get_json() or {}
     album_name = data.get('album_name')
     artist_name = data.get('artist_name')
+    theme = data.get('theme', 'Light')
+    indexing = data.get('indexing', False)
+    accent = data.get('accent', False)
+    custom_cover = data.get('custom_cover')
+
     if not album_name or not artist_name:
         return jsonify(error='album_name and artist_name required'), 400
+
+    # Cache the final poster path, not just metadata
+    cache_key = f"album_poster:{artist_name}:{album_name}:{theme}:{indexing}:{accent}:{custom_cover}"
+    poster_path = cache.get(cache_key)
+    if poster_path:
+        rel_path = os.path.relpath(poster_path, app.config['DOWNLOAD_DIR'])
+        return jsonify(message='Album poster generated (from cache)!', filePath=rel_path), 200
+
+    # If not cached, generate as usual
+    metadata_key = f"album_metadata:{artist_name}:{album_name}"
+    metadata = cache.get(metadata_key)
+    if not metadata:
+        try:
+            metadata = sp.get_album(f"{album_name} - {artist_name}", limit=1)[0]
+            cache.set(metadata_key, metadata, timeout=3600)
+        except Exception as e:
+            logging.error(f"Album poster generation error: {e}")
+            return jsonify(error='Failed to generate album poster', details=str(e)), 500
+
     save_dir = os.path.join(app.config['DOWNLOAD_DIR'], 'albums')
     try:
-        metadata = sp.get_album(f"{album_name} - {artist_name}", limit=1)[0]
         local_path = ps.album(
             metadata,
             save_dir=save_dir,
-            theme=data.get('theme', 'Light'),
-            indexing=data.get('indexing', False),
-            accent=data.get('accent', False),
-            custom_cover=data.get('custom_cover')
+            theme=theme,
+            indexing=indexing,
+            accent=accent,
+            custom_cover=custom_cover
         )
+        cache.set(cache_key, local_path, timeout=3600)
     except Exception as e:
         logging.error(f"Album poster generation error: {e}")
         return jsonify(error='Failed to generate album poster', details=str(e)), 500
+
     rel_path = os.path.relpath(local_path, app.config['DOWNLOAD_DIR'])
-    download_url = f"{request.url_root.rstrip('/')}/api/v1/get_poster/{rel_path}"
-    return jsonify(message='Album poster generated!', url=download_url), 200
+    return jsonify(message='Album poster generated!', filePath=rel_path), 200
 
 @app.route('/api/v1/generate_track_poster', methods=['POST', 'OPTIONS'])
 @jwt_required()
 def generate_track_endpoint():
-    """Generate track poster synchronously and return download URL"""
     if request.method == 'OPTIONS':
         return '', 204
 
-    # Log the incoming request
-    logging.info(f"Request JSON Body: {request.get_json()}")
-
-    # Get the JSON data
     data = request.get_json() or {}
     track_name = data.get('track_name')
     artist_name = data.get('artist_name')
     theme = data.get('theme', 'Light')
 
-    # Validate the required parameters
     if not track_name or not artist_name:
         return jsonify(error='track_name and artist_name required'), 400
 
-    save_dir = os.path.join(app.config['DOWNLOAD_DIR'], 'tracks')
+    # Cache the final poster path, not just metadata
+    cache_key = f"track_poster:{artist_name}:{track_name}:{theme}"
+    poster_path = cache.get(cache_key)
+    if poster_path:
+        rel_path = os.path.relpath(poster_path, app.config['DOWNLOAD_DIR'])
+        download_url = f"{request.url_root.rstrip('/')}/api/v1/get_poster/{rel_path}"
+        return jsonify(message='Track poster generated (from cache)!', url=download_url), 200
+
+    metadata_key = f"track_metadata:{artist_name}:{track_name}"
+    track = cache.get(metadata_key)
+    if not track:
+        try:
+            query = f"track:{track_name} artist:{artist_name}"
+            search_results = sp.get_track(query, limit=1)
+            if not search_results:
+                logging.error(f"No track found for {track_name} by {artist_name}")
+                return jsonify(error=f"No track found for {track_name} by {artist_name}"), 404
+            track = search_results[0]
+            cache.set(metadata_key, track, timeout=3600)
+        except Exception as e:
+            logging.error(f"Spotify API error: {e}", exc_info=True)
+            return jsonify(error='Spotify API failed', details=str(e)), 500
+
     try:
-        # Query Spotify API
-        query = f"track:{track_name} artist:{artist_name}"
-        logging.info(f"Querying Spotify API with: {query}")
-        search_results = sp.get_track(query, limit=1)
-        logging.info(f"Spotify API response: {search_results}")
-
-        # Handle empty results
-        if not search_results:
-            logging.error(f"No track found for {track_name} by {artist_name}")
-            return jsonify(error=f"No track found for {track_name} by {artist_name}"), 404
-
-        track = search_results[0]
-        # Fetch lyrics
         lyrics_text = ly.get_lyrics(track)
         if not lyrics_text:
-            logging.error(f"No lyrics found for {track_name} by {artist_name}")
             return jsonify(error='No lyrics could be retrieved for this track'), 404
 
-        # Generate poster
+        save_dir = os.path.join(app.config['DOWNLOAD_DIR'], 'tracks')
         local_path = ps.track(
             metadata=track,
             lyrics=lyrics_text,
@@ -193,23 +207,26 @@ def generate_track_endpoint():
             theme=theme,
             accent_color='Light'
         )
-
+        cache.set(cache_key, local_path, timeout=3600)
     except Exception as e:
         logging.error(f"Track poster generation error: {e}", exc_info=True)
         return jsonify(error='Failed to generate track poster', details=str(e)), 500
 
-    # Build download URL
     rel_path = os.path.relpath(local_path, app.config['DOWNLOAD_DIR'])
     download_url = f"{request.url_root.rstrip('/')}/api/v1/get_poster/{rel_path}"
     return jsonify(message='Track poster generated!', url=download_url), 200
 
-# --------- File Serving ---------
-@app.route('/api/v1/get_poster/<path:filename>', methods=['GET', 'OPTIONS'])
+@app.route('/api/v1/get_poster', methods=['POST', 'OPTIONS'])
 @jwt_required()
-def get_poster(filename):
-    """Serve generated poster files via Base64"""
+def get_poster():
     if request.method == 'OPTIONS':
         return '', 204
+
+    data = request.get_json() or {}
+    filename = data.get('filename')
+    if not filename:
+        return jsonify(error='filename required'), 400
+
     try:
         filepath = os.path.join(app.config['DOWNLOAD_DIR'], filename)
         with open(filepath, 'rb') as image_file:
@@ -218,13 +235,11 @@ def get_poster(filename):
     except FileNotFoundError:
         return jsonify(error='File not found'), 404
 
-# --------- Protected Endpoint Example ---------
 @app.route('/api/v1/protected', methods=['GET'])
 @jwt_required()
 def protected():
     return jsonify(message="This is a protected route.")
 
-# --------- Error Handlers ---------
 @app.errorhandler(404)
 def not_found(e):
     return jsonify(error='Not Found'), 404
