@@ -59,6 +59,7 @@ scikit-learn==1.6.1
 scipy==1.15.2
 shellingham==1.5.4
 six==1.17.0
+spotipy==2.25.1
 SQLAlchemy==2.0.40
 threadpoolctl==3.5.0
 toml==0.10.2

@@ -13,8 +13,9 @@ from flask_limiter.util import get_remote_address
 from flask_caching import Cache
 from flasgger import Swagger
 from poster import Poster
-from BeatPrints import lyrics, spotify
+from BeatPrints import lyrics
 from PIL import Image
+import spotify  # Change to this import
 
 # Load environment variables
 dotenv.load_dotenv()
@@ -54,7 +55,7 @@ app.config.update({
     "CACHE_TYPE": "redis",
     "CACHE_REDIS_URL": os.getenv("REDIS_URL", "redis://localhost:6379/1"),
     "DOWNLOAD_DIR": os.getenv("DOWNLOAD_DIR", "/tmp/beatprints_downloads"),
-    'SQLALCHEMY_ECHO' : True
+    'SQLALCHEMY_ECHO' : False
 
 })
 
@@ -143,16 +144,23 @@ def generate_album_endpoint():
     if poster_data:
         try:
             poster_data = json.loads(poster_data)
+            logging.info("Returning cached album poster data, not calling Spotify API.")
             return jsonify(**poster_data), 200
         except Exception as e:
             logging.error(f"Error decoding cached poster_data: {e}")
             cache.delete(cache_key)
 
+    logging.info("Calling sp.get_album from app.py")
     save_dir = os.path.join(app.config['DOWNLOAD_DIR'], 'albums')
     try:
-        metadata = sp.get_album(f"{album_name} - {artist_name}", limit=1)[0]
+        metadata = sp.get_album(f"{album_name} - {artist_name}", limit=1)
+        logging.info(f"Got album metadata: {metadata}")
+        
+        if not metadata:
+            return jsonify(error='Album not found'), 404
+            
         local_path = ps.album(
-            metadata,
+            metadata,  # Pass the metadata directly
             save_dir=save_dir,
             theme=theme,
             indexing=indexing,
@@ -160,7 +168,7 @@ def generate_album_endpoint():
             custom_cover=custom_cover
         )
     except Exception as e:
-        logging.error(f"Album poster generation error: {e}")
+        logging.error(f"Album poster generation error: {str(e)}")
         return jsonify(error='Failed to generate album poster', details=str(e)), 500
 
     rel_path = os.path.relpath(local_path, app.config['DOWNLOAD_DIR'])
@@ -190,12 +198,15 @@ def generate_track_endpoint():
     track_name = data.get('track_name')
     artist_name = data.get('artist_name')
     theme = data.get('theme', 'Light')
+    indexing = data.get('indexing', False)
+    accent = data.get('accent', False)
+    custom_cover = data.get('custom_cover')
 
     if not track_name or not artist_name:
         return jsonify(error='track_name and artist_name required'), 400
 
     # --- Redis cache key ---
-    cache_key = f"track_poster:{artist_name}:{track_name}:{theme}"
+    cache_key = f"track_poster:{artist_name}:{track_name}:{theme}:{indexing}:{accent}:{custom_cover}"
     poster_data = cache.get(cache_key)
     if poster_data:
         try:
@@ -207,41 +218,53 @@ def generate_track_endpoint():
 
     save_dir = os.path.join(app.config['DOWNLOAD_DIR'], 'tracks')
     try:
-        query = f"track:{track_name} artist:{artist_name}"
-        logging.info(f"Querying Spotify API with: {query}")
-        search_results = sp.get_track(query, limit=1)
-        logging.info(f"Spotify API response: {search_results}")
-
-        if not search_results:
+        # Get track metadata from Spotify
+        track = sp.get_track(f"{track_name} - {artist_name}")
+        logging.info(f"Spotify API response: {track}")
+        
+        if not track:
             logging.error(f"No track found for {track_name} by {artist_name}")
             return jsonify(error=f"No track found for {track_name} by {artist_name}"), 404
 
-        track = search_results[0]
-        lyrics_text = ly.get_lyrics(track)
-        if not lyrics_text:
-            logging.error(f"No lyrics found for {track_name} by {artist_name}")
-            return jsonify(error='No lyrics could be retrieved for this track'), 404
+        # Fetch lyrics using the lyrics component
+        logging.info(f"Fetching lyrics for {track.name} by {track.artist}")
+        lyrics = ly.get_lyrics(track)  
+        
+        # Ensure lyrics is a non-empty list of strings
+        if not lyrics or not isinstance(lyrics, list):
+            logging.warning(f"No lyrics found for {track.name} by {track.artist}")
+            lyrics = ["No lyrics available"]
+        else:
+            # Filter out empty lines and ensure all items are strings
+            lyrics = [str(line).strip() for line in lyrics if line and str(line).strip()]
+            if not lyrics:  # If all lines were empty
+                lyrics = ["No lyrics available"]
+        
+        logging.info(f"Processing lyrics: {len(lyrics)} lines")
 
+        # Generate the poster using track metadata and lyrics
         local_path = ps.track(
-            metadata=track,
-            lyrics=lyrics_text,
+            track,
+            lyrics=lyrics,
             save_dir=save_dir,
             theme=theme,
-            accent_color='Light'
+            accent=accent,
+            custom_cover=custom_cover
         )
 
-    except Exception as e:
-        logging.error(f"Track poster generation error: {e}", exc_info=True)
-        return jsonify(error='Failed to generate track poster', details=str(e)), 500
+        rel_path = os.path.relpath(local_path, app.config['DOWNLOAD_DIR'])
+        download_url = f"{request.url_root.rstrip('/')}/api/v1/get_poster/{rel_path}"
+        response_data = {
+            "message": 'Track poster generated!',
+            "url": download_url
+        }
+        cache.set(cache_key, json.dumps(response_data), timeout=3600)
+        return jsonify(**response_data), 200
 
-    rel_path = os.path.relpath(local_path, app.config['DOWNLOAD_DIR'])
-    download_url = f"{request.url_root.rstrip('/')}/api/v1/get_poster/{rel_path}"
-    response_data = {
-        "message": 'Track poster generated!',
-        "url": download_url
-    }
-    cache.set(cache_key, json.dumps(response_data), timeout=3600)
-    return jsonify(**response_data), 200
+    except Exception as e:
+        logging.error(f"Track poster generation error: {str(e)}")
+        logging.error("Traceback: ", exc_info=True)
+        return jsonify(error='Failed to generate track poster', details=str(e)), 500
 
 # --------- File Serving ---------
 @app.route('/api/v1/get_poster', methods=['POST', 'OPTIONS'])
