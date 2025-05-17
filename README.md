@@ -1,150 +1,204 @@
-# 🎵 BeatPrints API
+# 🎵 BeatPrints API 🎨
 
-BeatPrints is a Flask-based API that allows users to generate **album posters** and **track posters** using metadata from Spotify and lyrics from external sources. It also includes authentication using JWT tokens and rate-limiting for secure and efficient usage.
-
----
-
-## 🚀 Features
-
-- **Authentication**: Secure login using device IDs with JWT tokens that never expire.
-- **Poster Generation**:
-  - Generate **album posters** with customizable themes.
-  - Generate **track posters** with lyrics.
-- **Rate Limiting**: Prevent abuse with configurable request limits.
-- **Caching**: Redis-based caching for faster responses.
-- **File Serving**: Download generated posters directly.
-- **API Documentation**: Swagger integration for interactive API exploration.
+Welcome to **BeatPrints** – the easiest way to generate beautiful, custom posters for your favorite albums and tracks, powered by Spotify and lyrics magic!  
+Whether you're a developer, music lover, or just want to make your wall look cooler, this API is for you. 🚀
 
 ---
 
-## 🛠️ Setup Instructions
+## ✨ Features
 
-### **1. Clone the Repository**
-```bash
-git clone https://github.com/<your-username>/BeatPrints.git
-cd BeatPrints
+- 🔒 **JWT Authentication** for device-based access
+- 🎶 **Spotify Integration** for album & track data
+- 📝 **Lyrics Fetching** for tracks
+- 🖼️ **Poster Generation** for albums and tracks (with themes & custom covers)
+- ⚡ **Redis Caching** for blazing fast repeated requests
+- 📦 **Download & Base64 Serving** of posters
+- 🐍 **Noob-friendly Flask API** – easy to run, easy to use!
+
+---
+
+## 🚀 Quickstart
+
+### 1. **Clone the Repo**
+
+```sh
+git clone https://github.com/MA3V1N/beatdroid-flask.git
+cd beatdroid-flask
 ```
 
-### **2. Create and Activate a Virtual Environment**
-```bash
+### 2. **Install Requirements**
+
+```sh
 python3 -m venv venv
 source venv/bin/activate
-```
-
-### **3. Install Dependencies**
-```bash
 pip install -r requirements.txt
 ```
 
-### **4. Configure Environment Variables**
-Copy `.env.example` to `.env` and set the following values:
-```bash
-cp .env.example .env
-```
+### 3. **Set Up Environment Variables**
 
----
+Create a `.env` file in the root directory:
 
-## 🔧 Environment Variables
-
-Populate your `.env` file with:
-
-```
-FLASK_ENV=development
-JWT_SECRET_KEY=your_jwt_secret
-REDIS_URL=redis://localhost:6379/0
+```env
 SPOTIFY_CLIENT_ID=your_spotify_client_id
 SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
+JWT_SECRET_KEY=your_super_secret_key
+REDIS_URL=redis://localhost:6379/1
 DOWNLOAD_DIR=/tmp/beatprints_downloads
-```  
+```
 
-- `FLASK_ENV`: `development` or `production`  
-- `JWT_SECRET_KEY`: Secret for signing JWT tokens  
-- `REDIS_URL`: Redis connection URI for rate limiting and caching  
-- `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`: Spotify API credentials  
-- `DOWNLOAD_DIR`: Directory to store generated posters
+### 4. **Run the Server**
+
+```sh
+python app.py
+```
+
+Server will be live at:  
+`http://127.0.0.1:5000`
 
 ---
 
-## 🏃 Running Locally
+## 🔑 Authentication
 
-```bash
-# Activate virtualenv if not already
-source venv/bin/activate
+Before using the API, **register your device** to get a JWT token:
 
-# Start Redis (if not already running)
-redis-server &
-
-# Run the Flask app
-env FLASK_APP=app.py flask run --host=0.0.0.0 --port=5000
-```
-
-The API will be available at `http://localhost:5000/api/v1/`.
-
----
-
-## 📖 API Endpoints
-
-### 1. Authentication
-
-#### **POST** `/api/v1/auth/login`
-Request:
-```json
-{ "username": "user1", "password": "pass123" }
-```
-Response:
-```json
-{ "access_token": "<JWT_TOKEN>" }
-```
-
-### 2. Generate Album Poster
-
-#### **POST** `/api/v1/generate_album_poster`
-Headers:
-```
-Authorization: Bearer <JWT_TOKEN>
+```http
+POST /api/v1/auth/login
 Content-Type: application/json
-```
-Body:
-```json
+
 {
-  "album_name": "Abbey Road",
-  "artist_name": "The Beatles",
-  "theme": "Dark",
-  "indexing": true,
-  "accent": false
+  "device_id": "your_unique_device_id"
 }
 ```
-Response:
+
+**Response:**
+```json
+{
+  "access_token": "your_jwt_token"
+}
+```
+
+Use this token in the `Authorization: Bearer ...` header for all protected endpoints.
+
+---
+
+## 🎨 Generate Album Poster
+
+```http
+POST /api/v1/generate_album_poster
+Authorization: Bearer <your_token>
+Content-Type: application/json
+
+{
+  "album_name": "Blonde",
+  "artist_name": "Frank Ocean",
+  "theme": "Light",         // Optional: Light, Dark, Catppuccin, etc.
+  "indexing": false,        // Optional
+  "accent": false,          // Optional
+  "custom_cover": null      // Optional: URL or base64 image
+}
+```
+
+**Response:**
 ```json
 {
   "message": "Album poster generated!",
-  "url": "http://localhost:5000/api/v1/get_poster/albums/filename.png"
+  "filePath": "albums/blonde_frank_ocean.png",
+  "blurhash": "LKO2?U%2Tw=w]~RBVZRi};RPxuwH"
 }
 ```
 
-### 3. Generate Track Poster
+---
 
-#### **POST** `/api/v1/generate_track_poster`
-Headers and body similar to album, using `track_name` and `artist_name`.
+## 🎵 Generate Track Poster
 
-### 4. Download Poster
+```http
+POST /api/v1/generate_track_poster
+Authorization: Bearer <your_token>
+Content-Type: application/json
 
-#### **GET** `/api/v1/get_poster/<path>`
-Headers:
+{
+  "track_name": "Demons",
+  "artist_name": "Coldplay",
+  "theme": "Dark"
+}
 ```
-Authorization: Bearer <JWT_TOKEN>
+
+**Response:**
+```json
+{
+  "message": "Track poster generated!",
+  "url": "http://127.0.0.1:5000/api/v1/get_poster/tracks/demons_coldplay.png"
+}
 ```
-Responds with the image file as an attachment.
 
 ---
 
-## 📜 Swagger UI
+## 🖼️ Download Poster as Base64
 
-Visit `http://localhost:5000/apidocs` to explore the API interactively.
+```http
+POST /api/v1/get_poster
+Authorization: Bearer <your_token>
+Content-Type: application/json
+
+{
+  "filename": "albums/blonde_frank_ocean.png"
+}
+```
+
+**Response:**
+```json
+{
+  "image": "<base64-encoded-image>"
+}
+```
 
 ---
 
-## 📄 License
+## 🛡️ Protected Example
 
-[MIT License](LICENSE)
+```http
+GET /api/v1/protected
+Authorization: Bearer <your_token>
+```
+
+---
+
+## 🧑‍💻 For Developers
+
+- **Poster themes:** Light, Dark, Catppuccin, Gruvbox, Nord, RosePine, Everforest
+- **Caching:** Redis is used for both metadata and poster responses
+- **Rate limiting:** 10,000 requests/hour per IP (configurable)
+- **Swagger docs:** Available if you want to explore interactively
+
+---
+
+## 🐞 Troubleshooting
+
+- **401 Unauthorized?**  
+  Make sure your JWT token is valid and sent in the `Authorization` header.
+
+- **500 Internal Server Error?**  
+  Check your `.env` values, Spotify credentials, and Redis server.
+
+- **Poster not found?**  
+  Double-check your album/track names and spelling.
+
+---
+
+## ❤️ Contributing
+
+PRs are welcome!  
+If you have ideas for new features, themes, or bug fixes, open an issue or submit a pull request.
+
+---
+
+## 📜 License
+
+MIT License
+
+---
+
+**Made with 🎧 and ☕ by [MA3V1N](https://github.com/MA3V1N)**
+
+---
 
