@@ -62,7 +62,7 @@ Server will be live at:
 Before using the API, **register your device** to get a JWT token:
 
 ```http
-POST /api/v1/auth/login
+POST /auth/login
 Content-Type: application/json
 
 {
@@ -73,7 +73,13 @@ Content-Type: application/json
 **Response:**
 ```json
 {
-  "access_token": "your_jwt_token"
+  "success": true,
+  "message": "Device authenticated successfully",
+  "data": {
+    "access_token": "your_jwt_token",
+    "device_id": "your_unique_device_id",
+    "is_new_device": false
+  }
 }
 ```
 
@@ -84,7 +90,7 @@ Use this token in the `Authorization: Bearer ...` header for all protected endpo
 ## 🎨 Generate Album Poster
 
 ```http
-POST /api/v1/generate_album_poster
+POST /generate_album_poster
 Authorization: Bearer <your_token>
 Content-Type: application/json
 
@@ -101,9 +107,13 @@ Content-Type: application/json
 **Response:**
 ```json
 {
-  "message": "Album poster generated!",
-  "filePath": "albums/blonde_frank_ocean.png",
-  "blurhash": "LKO2?U%2Tw=w]~RBVZRi};RPxuwH"
+  "success": true,
+  "message": "Album poster generated successfully!",
+  "data": {
+    "filePath": "albums/blonde_frank_ocean.png",
+    "thumbhash": "LKO2?U%2Tw=w]~RBVZRi};RPxuwH",
+    "type": "album_poster"
+  }
 }
 ```
 
@@ -112,7 +122,7 @@ Content-Type: application/json
 ## 🎵 Generate Track Poster
 
 ```http
-POST /api/v1/generate_track_poster
+POST /generate_track_poster
 Authorization: Bearer <your_token>
 Content-Type: application/json
 
@@ -126,8 +136,13 @@ Content-Type: application/json
 **Response:**
 ```json
 {
-  "message": "Track poster generated!",
-  "url": "http://127.0.0.1:5000/api/v1/get_poster/tracks/demons_coldplay.png"
+  "success": true,
+  "message": "Track poster generated successfully!",
+  "data": {
+    "filePath": "tracks/demons_coldplay.png",
+    "thumbhash": "LKO2?U%2Tw=w]~RBVZRi};RPxuwH",
+    "type": "track_poster"
+  }
 }
 ```
 
@@ -136,7 +151,7 @@ Content-Type: application/json
 ## 🖼️ Download Poster as Base64
 
 ```http
-POST /api/v1/get_poster
+POST /get_poster
 Authorization: Bearer <your_token>
 Content-Type: application/json
 
@@ -148,7 +163,13 @@ Content-Type: application/json
 **Response:**
 ```json
 {
-  "image": "<base64-encoded-image>"
+  "success": true,
+  "message": "Image retrieved successfully",
+  "data": {
+    "image": "<base64-encoded-image>",
+    "thumbhash": "LKO2?U%2Tw=w]~RBVZRi};RPxuwH",
+    "filename": "albums/blonde_frank_ocean.png"
+  }
 }
 ```
 
@@ -157,7 +178,7 @@ Content-Type: application/json
 ## 🛡️ Protected Example
 
 ```http
-GET /api/v1/protected
+GET /protected
 Authorization: Bearer <your_token>
 ```
 

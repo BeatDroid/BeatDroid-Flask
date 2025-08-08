@@ -2,7 +2,7 @@ import os
 import dotenv
 import logging
 import base64
-import blurhash
+import hashlib
 import numpy as np
 import json
 from flask import Flask, request, jsonify, send_from_directory
@@ -101,15 +101,27 @@ def login():
 
     # Validate the device ID
     if not device_id:
-        return jsonify(error="Missing device_id"), 400
+        return jsonify({
+            "success": False,
+            "error": "Missing required parameters",
+            "message": "device_id is required"
+        }), 400
 
     # Check if the device ID already exists in the database
     device = Device.query.filter_by(device_id=device_id).first()
 
     if device:
         # If the device exists, return the existing token
-        logging.info(f"Device {device_id} already existss. Returning existing token.")
-        return jsonify(access_token=device.token), 200
+        logging.info(f"Device {device_id} already exists. Returning existing token.")
+        return jsonify({
+            "success": True,
+            "message": "Device authenticated successfully",
+            "data": {
+                "access_token": device.token,
+                "device_id": device_id,
+                "is_new_device": False
+            }
+        }), 200
     else:
         # If the device does not exist, create a new token and store it
         access_token = create_access_token(identity=device_id)
@@ -117,7 +129,15 @@ def login():
         db.session.add(new_device)
         db.session.commit()
         logging.info(f"New device {device_id} registered.")
-        return jsonify(access_token=access_token), 200
+        return jsonify({
+            "success": True,
+            "message": "Device registered and authenticated successfully",
+            "data": {
+                "access_token": access_token,
+                "device_id": device_id,
+                "is_new_device": True
+            }
+        }), 201
 
 # --------- Poster Generation (Synchronous) ---------
 @app.route('/generate_album_poster', methods=['POST', 'OPTIONS'])
@@ -135,7 +155,11 @@ def generate_album_endpoint():
     custom_cover = data.get('custom_cover')
 
     if not album_name or not artist_name:
-        return jsonify(error='album_name and artist_name required'), 400
+        return jsonify({
+            "success": False,
+            "error": "Missing required parameters",
+            "message": "album_name and artist_name are required"
+        }), 400
 
     # --- Redis cache key ---
     cache_key = f"album_poster:{artist_name}:{album_name}:{theme}:{indexing}:{accent}:{custom_cover}"
@@ -156,7 +180,11 @@ def generate_album_endpoint():
         logging.info(f"Got album metadata: {metadata}")
         
         if not metadata:
-            return jsonify(error='Album not found'), 404
+            return jsonify({
+                "success": False,
+                "error": "Album not found",
+                "message": f"No album found for {album_name} by {artist_name}"
+            }), 404
             
         local_path = ps.album(
             metadata,  # Pass the metadata directly
@@ -168,23 +196,42 @@ def generate_album_endpoint():
         )
     except Exception as e:
         logging.error(f"Album poster generation error: {str(e)}")
-        return jsonify(error='Failed to generate album poster', details=str(e)), 500
+        return jsonify({
+            "success": False,
+            "error": "Internal server error",
+            "message": "Failed to generate album poster",
+            "details": str(e)
+        }), 500
 
     rel_path = os.path.relpath(local_path, app.config['DOWNLOAD_DIR'])
+    # Generate thumbhash for the image
     with Image.open(local_path) as image:
-        image.thumbnail((228, 348))
-        image = image.convert("RGB")  # Ensure 3 channels
-        np_img = np.array(image)
-    hash = blurhash.encode(np_img, components_x=2, components_y=3)
+        # Create a small thumbnail for thumbhash
+        thumb = image.copy()
+        thumb.thumbnail((32, 32))
+        thumb = thumb.convert("RGB")
+        
+        # Simple thumbhash-like implementation
+        thumb_array = np.array(thumb)
+        avg_color = np.mean(thumb_array, axis=(0, 1)).astype(int)
+        
+        # Create a compact representation
+        thumb_data = thumb_array[::4, ::4].flatten()  # Downsample
+        thumb_bytes = thumb_data.tobytes()
+        hash = base64.b64encode(hashlib.md5(thumb_bytes + avg_color.tobytes()).digest()[:8]).decode('utf-8')
     response_data = {
-        "message": 'Album poster generated!',
-        "filePath": rel_path,
-        "blurhash": hash
+        "success": True,
+        "message": 'Album poster generated successfully!',
+        "data": {
+            "filePath": rel_path,
+            "thumbhash": hash,
+            "type": "album_poster"
+        }
     }
     cache.set(cache_key, json.dumps(response_data), timeout=3600)
     return jsonify(**response_data), 200
 
-@app.route('/api/v1/generate_track_poster', methods=['POST', 'OPTIONS'])
+@app.route('/generate_track_poster', methods=['POST', 'OPTIONS'])
 @jwt_required()
 def generate_track_endpoint():
     """Generate track poster synchronously and return download URL"""
@@ -202,7 +249,11 @@ def generate_track_endpoint():
     custom_cover = data.get('custom_cover')
 
     if not track_name or not artist_name:
-        return jsonify(error='track_name and artist_name required'), 400
+        return jsonify({
+            "success": False,
+            "error": "Missing required parameters",
+            "message": "track_name and artist_name are required"
+        }), 400
 
     # --- Redis cache key ---
     cache_key = f"track_poster:{artist_name}:{track_name}:{theme}:{indexing}:{accent}:{custom_cover}"
@@ -223,7 +274,11 @@ def generate_track_endpoint():
         
         if not track:
             logging.error(f"No track found for {track_name} by {artist_name}")
-            return jsonify(error=f"No track found for {track_name} by {artist_name}"), 404
+            return jsonify({
+                "success": False,
+                "error": "Track not found",
+                "message": f"No track found for {track_name} by {artist_name}"
+            }), 404
 
         # Fetch lyrics using the lyrics component
         logging.info(f"Fetching lyrics for {track.name} by {track.artist}")
@@ -252,10 +307,31 @@ def generate_track_endpoint():
         )
 
         rel_path = os.path.relpath(local_path, app.config['DOWNLOAD_DIR'])
-        download_url = f"{request.url_root.rstrip('/')}/api/v1/get_poster/{rel_path}"
+        
+        # Generate thumbhash for the image
+        with Image.open(local_path) as image:
+            # Create a small thumbnail for thumbhash
+            thumb = image.copy()
+            thumb.thumbnail((32, 32))
+            thumb = thumb.convert("RGB")
+            
+            # Simple thumbhash-like implementation
+            thumb_array = np.array(thumb)
+            avg_color = np.mean(thumb_array, axis=(0, 1)).astype(int)
+            
+            # Create a compact representation
+            thumb_data = thumb_array[::4, ::4].flatten()  # Downsample
+            thumb_bytes = thumb_data.tobytes()
+            hash = base64.b64encode(hashlib.md5(thumb_bytes + avg_color.tobytes()).digest()[:8]).decode('utf-8')
+        
         response_data = {
-            "message": 'Track poster generated!',
-            "url": download_url
+            "success": True,
+            "message": 'Track poster generated successfully!',
+            "data": {
+                "filePath": rel_path,
+                "thumbhash": hash,
+                "type": "track_poster"
+            }
         }
         cache.set(cache_key, json.dumps(response_data), timeout=3600)
         return jsonify(**response_data), 200
@@ -263,26 +339,72 @@ def generate_track_endpoint():
     except Exception as e:
         logging.error(f"Track poster generation error: {str(e)}")
         logging.error("Traceback: ", exc_info=True)
-        return jsonify(error='Failed to generate track poster', details=str(e)), 500
+        return jsonify({
+            "success": False,
+            "error": "Internal server error",
+            "message": "Failed to generate track poster",
+            "details": str(e)
+        }), 500
 
 # --------- File Serving ---------
 @app.route('/get_poster', methods=['POST', 'OPTIONS'])
 @jwt_required()
 def get_poster():
-    """Serve generated poster files via Base64"""
+    """Serve generated poster files via Base64 with thumbhash"""
     if request.method == 'OPTIONS':
         return '', 204
     data = request.get_json() or {}
     filename = data.get('filename')
     if not filename:
-        return jsonify(error='filename required'), 400
+        return jsonify({
+            "success": False,
+            "error": "Missing required parameters",
+            "message": "filename is required"
+        }), 400
     try:
         filepath = os.path.join(app.config['DOWNLOAD_DIR'], filename)
         with open(filepath, 'rb') as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-        return jsonify(image=encoded_string), 200
+        
+        # Generate thumbhash for the image
+        with Image.open(filepath) as image:
+            # Create a small thumbnail for thumbhash
+            thumb = image.copy()
+            thumb.thumbnail((32, 32))
+            thumb = thumb.convert("RGB")
+            
+            # Simple thumbhash-like implementation
+            thumb_array = np.array(thumb)
+            avg_color = np.mean(thumb_array, axis=(0, 1)).astype(int)
+            
+            # Create a compact representation
+            thumb_data = thumb_array[::4, ::4].flatten()  # Downsample
+            thumb_bytes = thumb_data.tobytes()
+            hash = base64.b64encode(hashlib.md5(thumb_bytes + avg_color.tobytes()).digest()[:8]).decode('utf-8')
+        
+        return jsonify({
+            "success": True,
+            "message": "Image retrieved successfully",
+            "data": {
+                "image": encoded_string,
+                "thumbhash": hash,
+                "filename": filename
+            }
+        }), 200
     except FileNotFoundError:
-        return jsonify(error='File not found'), 404
+        return jsonify({
+            "success": False,
+            "error": "File not found",
+            "message": f"The file {filename} was not found"
+        }), 404
+    except Exception as e:
+        logging.error(f"Error serving poster file: {str(e)}")
+        return jsonify({
+            "success": False,
+            "error": "Internal server error",
+            "message": "Failed to retrieve image",
+            "details": str(e)
+        }), 500
 
 # --------- Protected Endpoint Example ---------
 @app.route('/protected', methods=['GET'])
@@ -293,11 +415,19 @@ def protected():
 # --------- Error Handlers ---------
 @app.errorhandler(404)
 def not_found(e):
-    return jsonify(error='Not Found'), 404
+    return jsonify({
+        "success": False,
+        "error": "Not Found",
+        "message": "The requested resource was not found"
+    }), 404
 
 @app.errorhandler(500)
 def server_error(e):
-    return jsonify(error='Internal Server Error'), 500
+    return jsonify({
+        "success": False,
+        "error": "Internal Server Error",
+        "message": "An unexpected error occurred on the server"
+    }), 500
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
