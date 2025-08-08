@@ -90,7 +90,7 @@ sp = spotify.Spotify(
 )
 
 # --------- Authentication ---------
-@app.route('/api/v1/auth/login', methods=['POST', 'OPTIONS'])
+@app.route('/auth/login', methods=['POST', 'OPTIONS'])
 def login():
     """Authenticate and return JWT token based on device ID"""
     if request.method == 'OPTIONS':
@@ -121,7 +121,7 @@ def login():
         return jsonify(access_token=access_token), 200
 
 # --------- Poster Generation (Synchronous) ---------
-@app.route('/api/v1/generate_album_poster', methods=['POST', 'OPTIONS'])
+@app.route('/generate_album_poster', methods=['POST', 'OPTIONS'])
 @jwt_required()
 def generate_album_endpoint():
     """Generate album poster synchronously and return download URL"""
@@ -267,7 +267,7 @@ def generate_track_endpoint():
         return jsonify(error='Failed to generate track poster', details=str(e)), 500
 
 # --------- File Serving ---------
-@app.route('/api/v1/get_poster', methods=['POST', 'OPTIONS'])
+@app.route('/get_poster', methods=['POST', 'OPTIONS'])
 @jwt_required()
 def get_poster():
     """Serve generated poster files via Base64"""
@@ -286,7 +286,7 @@ def get_poster():
         return jsonify(error='File not found'), 404
 
 # --------- Protected Endpoint Example ---------
-@app.route('/api/v1/protected', methods=['GET'])
+@app.route('/protected', methods=['GET'])
 @jwt_required()
 def protected():
     return jsonify(message="This is a protected route.")
