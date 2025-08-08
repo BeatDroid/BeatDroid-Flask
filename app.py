@@ -51,9 +51,8 @@ app.config.update({
     "SQLALCHEMY_DATABASE_URI": "sqlite:///devices.db",
     "SQLALCHEMY_TRACK_MODIFICATIONS": False,
     "JWT_ACCESS_TOKEN_EXPIRES": False,  # Token never expires
-    "RATELIMIT_STORAGE_URI": os.getenv("REDIS_URL", "redis://localhost:6379/0"),
-    "CACHE_TYPE": "redis",
-    "CACHE_REDIS_URL": os.getenv("REDIS_URL", "redis://localhost:6379/1"),
+    "RATELIMIT_STORAGE_URI": "memory://",  # Use in-memory storage for rate limiting
+    "CACHE_TYPE": "simple",  # Use simple in-memory cache
     "DOWNLOAD_DIR": os.getenv("DOWNLOAD_DIR", "/tmp/beatprints_downloads"),
     'SQLALCHEMY_ECHO' : False
 
