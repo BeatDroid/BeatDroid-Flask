@@ -2,8 +2,6 @@ import os
 import dotenv
 import logging
 import base64
-import hashlib
-import numpy as np
 import json
 from flask import Flask, request, jsonify, send_from_directory
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required
@@ -16,6 +14,7 @@ from poster import Poster
 from BeatPrints import lyrics
 from PIL import Image
 import spotify  # Change to this import
+from thumbhash import image_to_thumbhash
 
 # Load environment variables
 dotenv.load_dotenv()
@@ -205,29 +204,19 @@ def generate_album_endpoint():
 
     rel_path = os.path.relpath(local_path, app.config['DOWNLOAD_DIR'])
     # Generate thumbhash for the image
-    with Image.open(local_path) as image:
-        # Create a small thumbnail for thumbhash
-        thumb = image.copy()
-        thumb.thumbnail((32, 32))
-        thumb = thumb.convert("RGB")
-        
-        # Simple thumbhash-like implementation
-        thumb_array = np.array(thumb)
-        avg_color = np.mean(thumb_array, axis=(0, 1)).astype(int)
-        
-        # Create a compact representation
-        thumb_data = thumb_array[::4, ::4].flatten()  # Downsample
-        thumb_bytes = thumb_data.tobytes()
-        hash = base64.b64encode(hashlib.md5(thumb_bytes + avg_color.tobytes()).digest()[:8]).decode('utf-8')
+    hash = image_to_thumbhash(local_path)
     response_data = {
         "success": True,
         "message": 'Album poster generated successfully!',
         "data": {
             "filePath": rel_path,
             "thumbhash": hash,
-            "type": "album_poster"
+            "type": "album_poster",
+            "albumName": metadata.name,
+            "artistName": metadata.artist
         }
     }
+    logging.info(f"Album poster generated successfully: {response_data}")
     cache.set(cache_key, json.dumps(response_data), timeout=3600)
     return jsonify(**response_data), 200
 
@@ -309,20 +298,7 @@ def generate_track_endpoint():
         rel_path = os.path.relpath(local_path, app.config['DOWNLOAD_DIR'])
         
         # Generate thumbhash for the image
-        with Image.open(local_path) as image:
-            # Create a small thumbnail for thumbhash
-            thumb = image.copy()
-            thumb.thumbnail((32, 32))
-            thumb = thumb.convert("RGB")
-            
-            # Simple thumbhash-like implementation
-            thumb_array = np.array(thumb)
-            avg_color = np.mean(thumb_array, axis=(0, 1)).astype(int)
-            
-            # Create a compact representation
-            thumb_data = thumb_array[::4, ::4].flatten()  # Downsample
-            thumb_bytes = thumb_data.tobytes()
-            hash = base64.b64encode(hashlib.md5(thumb_bytes + avg_color.tobytes()).digest()[:8]).decode('utf-8')
+        hash = image_to_thumbhash(local_path)
         
         response_data = {
             "success": True,
@@ -330,7 +306,9 @@ def generate_track_endpoint():
             "data": {
                 "filePath": rel_path,
                 "thumbhash": hash,
-                "type": "track_poster"
+                "type": "track_poster",
+                "trackName": track.name,
+                "artistName": track.artist
             }
         }
         cache.set(cache_key, json.dumps(response_data), timeout=3600)
@@ -366,28 +344,11 @@ def get_poster():
         with open(filepath, 'rb') as image_file:
             encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
         
-        # Generate thumbhash for the image
-        with Image.open(filepath) as image:
-            # Create a small thumbnail for thumbhash
-            thumb = image.copy()
-            thumb.thumbnail((32, 32))
-            thumb = thumb.convert("RGB")
-            
-            # Simple thumbhash-like implementation
-            thumb_array = np.array(thumb)
-            avg_color = np.mean(thumb_array, axis=(0, 1)).astype(int)
-            
-            # Create a compact representation
-            thumb_data = thumb_array[::4, ::4].flatten()  # Downsample
-            thumb_bytes = thumb_data.tobytes()
-            hash = base64.b64encode(hashlib.md5(thumb_bytes + avg_color.tobytes()).digest()[:8]).decode('utf-8')
-        
         return jsonify({
             "success": True,
             "message": "Image retrieved successfully",
             "data": {
                 "image": encoded_string,
-                "thumbhash": hash,
                 "filename": filename
             }
         }), 200
