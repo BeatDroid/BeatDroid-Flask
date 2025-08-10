@@ -160,18 +160,7 @@ def generate_album_endpoint():
             "message": "album_name and artist_name are required"
         }), 400
 
-    # --- Redis cache key ---
-    cache_key = f"album_poster:{artist_name}:{album_name}:{theme}:{indexing}:{accent}:{custom_cover}"
-    poster_data = cache.get(cache_key)
-    if poster_data:
-        try:
-            poster_data = json.loads(poster_data)
-            logging.info("Returning cached album poster data, not calling Spotify API.")
-            return jsonify(**poster_data), 200
-        except Exception as e:
-            logging.error(f"Error decoding cached poster_data: {e}")
-            cache.delete(cache_key)
-
+    # Cache checking has been removed as per user request
     logging.info("Calling sp.get_album from app.py")
     save_dir = os.path.join(app.config['DOWNLOAD_DIR'], 'albums')
     try:
@@ -218,7 +207,6 @@ def generate_album_endpoint():
         }
     }
     logging.info(f"Album poster generated successfully: {response_data}")
-    cache.set(cache_key, json.dumps(response_data), timeout=3600)
     return jsonify(**response_data), 200
 
 @app.route('/generate_track_poster', methods=['POST', 'OPTIONS'])
@@ -244,17 +232,6 @@ def generate_track_endpoint():
             "error": "Missing required parameters",
             "message": "track_name and artist_name are required"
         }), 400
-
-    # --- Redis cache key ---
-    cache_key = f"track_poster:{artist_name}:{track_name}:{theme}:{indexing}:{accent}:{custom_cover}"
-    poster_data = cache.get(cache_key)
-    if poster_data:
-        try:
-            poster_data = json.loads(poster_data)
-            return jsonify(**poster_data), 200
-        except Exception as e:
-            logging.error(f"Error decoding cached poster_data: {e}")
-            cache.delete(cache_key)
 
     save_dir = os.path.join(app.config['DOWNLOAD_DIR'], 'tracks')
     try:
@@ -313,7 +290,6 @@ def generate_track_endpoint():
                 "artistName": track.artist
             }
         }
-        cache.set(cache_key, json.dumps(response_data), timeout=3600)
         return jsonify(**response_data), 200
 
     except Exception as e:
