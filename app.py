@@ -14,7 +14,7 @@ from poster import Poster
 from BeatPrints import lyrics
 from PIL import Image
 import spotify  # Change to this import
-from thumbhash import image_to_thumbhash
+import blurhash
 
 # Load environment variables
 dotenv.load_dotenv()
@@ -203,14 +203,15 @@ def generate_album_endpoint():
         }), 500
 
     rel_path = os.path.relpath(local_path, app.config['DOWNLOAD_DIR'])
-    # Generate thumbhash for the image
-    hash = image_to_thumbhash(local_path)
+    # Generate blurhash for the image with blurhash-python
+    with open(local_path, 'rb') as image_file:
+        hash = blurhash.encode(image_file, x_components=4, y_components=3)
     response_data = {
         "success": True,
         "message": 'Album poster generated successfully!',
         "data": {
             "filePath": rel_path,
-            "thumbhash": hash,
+            "blurhash": hash,
             "type": "album_poster",
             "albumName": metadata.name,
             "artistName": metadata.artist
@@ -297,15 +298,16 @@ def generate_track_endpoint():
 
         rel_path = os.path.relpath(local_path, app.config['DOWNLOAD_DIR'])
         
-        # Generate thumbhash for the image
-        hash = image_to_thumbhash(local_path)
+        # Generate blurhash for the image with blurhash-python
+        with open(local_path, 'rb') as image_file:
+            hash = blurhash.encode(image_file, x_components=4, y_components=3)
         
         response_data = {
             "success": True,
             "message": 'Track poster generated successfully!',
             "data": {
                 "filePath": rel_path,
-                "thumbhash": hash,
+                "blurhash": hash,
                 "type": "track_poster",
                 "trackName": track.name,
                 "artistName": track.artist
