@@ -341,17 +341,34 @@ def get_poster():
         }), 400
     try:
         filepath = os.path.join(app.config['DOWNLOAD_DIR'], filename)
-        with open(filepath, 'rb') as image_file:
-            encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-        
-        return jsonify({
-            "success": True,
-            "message": "Image retrieved successfully",
-            "data": {
-                "image": encoded_string,
-                "filename": filename
-            }
-        }), 200
+        try:
+            with open(filepath, 'rb') as image_file:
+                encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+            
+            # Delete the file after reading it
+            os.remove(filepath)
+            logging.info(f"Successfully deleted file: {filepath}")
+            
+            return jsonify({
+                "success": True,
+                "message": "Image retrieved and file deleted successfully",
+                "data": {
+                    "image": encoded_string,
+                    "filename": filename
+                }
+            }), 200
+        except OSError as e:
+            logging.error(f"Error deleting file {filepath}: {str(e)}")
+            # Still return the image even if deletion fails, but include a warning
+            return jsonify({
+                "success": True,
+                "message": "Image retrieved but file could not be deleted",
+                "warning": f"Failed to delete file: {str(e)}",
+                "data": {
+                    "image": encoded_string,
+                    "filename": filename
+                }
+            }), 200
     except FileNotFoundError:
         return jsonify({
             "success": False,
