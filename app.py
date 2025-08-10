@@ -3,6 +3,7 @@ import dotenv
 import logging
 import base64
 import json
+from BeatPrints.errors import NoLyricsAvailable
 from flask import Flask, request, jsonify, send_from_directory
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required
 from flask_sqlalchemy import SQLAlchemy
@@ -249,15 +250,18 @@ def generate_track_endpoint():
 
         # Fetch lyrics using the lyrics component
         logging.info(f"Fetching lyrics for {track.name} by {track.artist}")
-        lyrics = ly.get_lyrics(track)  
-        
-        # Ensure lyrics is a non-empty list of strings
-        if not lyrics or not isinstance(lyrics, list):
-            logging.warning(f"No lyrics found for {track.name} by {track.artist}")
+        try:
+            lyrics = ly.get_lyrics(track)
+            # Ensure lyrics is a non-empty list of strings
+            if not lyrics or not isinstance(lyrics, list):
+                logging.warning(f"No lyrics found for {track.name} by {track.artist}")
+                lyrics = ["No lyrics available"]
+            else:
+                # Filter out empty lines and ensure all items are strings
+                lyrics = [str(line).strip() for line in lyrics if line and str(line).strip()]
+        except NoLyricsAvailable:
+            logging.warning(f"No lyrics available for {track.name} by {track.artist}")
             lyrics = ["No lyrics available"]
-        else:
-            # Filter out empty lines and ensure all items are strings
-            lyrics = [str(line).strip() for line in lyrics if line and str(line).strip()]
             if not lyrics:  # If all lines were empty
                 lyrics = ["No lyrics available"]
         
