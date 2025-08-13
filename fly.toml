@@ -6,6 +6,10 @@
 app = 'beatdroid-flask'
 primary_region = 'bom'
 
+[env]
+  FLASK_ENV = "production"
+  FLASK_DEBUG = "false"
+
 [build]
 
 [http_service]

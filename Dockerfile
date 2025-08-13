@@ -10,4 +10,4 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.10/site-packages /usr/local/lib/python3.10/site-packages
 COPY . .
 EXPOSE 5000
-CMD ["python", "app.py"]
+CMD ["python", "-m", "gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--max-requests", "1000", "--max-requests-jitter", "50", "--timeout", "30", "--keep-alive", "2", "--preload", "app:app"]
