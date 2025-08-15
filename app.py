@@ -23,6 +23,7 @@ from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
 from sentry_sdk.integrations.logging import LoggingIntegration
 import traceback
 from functools import wraps
+from sqlalchemy import text
 
 # Initialize Sentry only in production environment
 if os.getenv('ENVIRONMENT') == 'production':
@@ -640,7 +641,7 @@ def health_check():
     try:
         # Check database connection
         with sentry_sdk.start_span(op="db.health", description="Database health check"):
-            db.session.execute('SELECT 1')
+            db.session.execute(text('SELECT 1'))
         
         # Check download directories
         with sentry_sdk.start_span(op="file.health", description="File system health check"):
