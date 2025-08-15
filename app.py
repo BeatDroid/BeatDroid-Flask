@@ -25,8 +25,10 @@ import traceback
 from functools import wraps
 from sqlalchemy import text
 
+SENTRY_DSN = os.getenv("SENTRY_DSN");
+
 # Initialize Sentry only in production environment
-if os.getenv('ENVIRONMENT') == 'production':
+if (os.getenv('ENVIRONMENT') == 'production' and SENTRY_DSN != None):
     # Configure Sentry with comprehensive integrations
     sentry_logging = LoggingIntegration(
         level=logging.INFO,  # Capture info and above as breadcrumbs
@@ -34,7 +36,7 @@ if os.getenv('ENVIRONMENT') == 'production':
     )
 
     sentry_sdk.init(
-        dsn=os.getenv("SENTRY_DSN"),
+        dsn=SENTRY_DSN,
         integrations=[
             FlaskIntegration(
                 transaction_style="endpoint",
