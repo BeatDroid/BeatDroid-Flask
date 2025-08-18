@@ -10,7 +10,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_caching import Cache
-from flasgger import Swagger
+from flask_restx import Api, Resource, fields
 from poster import Poster
 from BeatPrints import lyrics
 from PIL import Image
@@ -216,7 +216,143 @@ db = SQLAlchemy(app)
 jwt = JWTManager(app)
 limiter = Limiter(get_remote_address, app=app, default_limits=["10000 per hour"])
 cache = Cache(app)
-swagger = Swagger(app, template_file='BeatDroid.yaml')
+# Initialize Flask-RESTX for API docs and future namespacing
+authorizations = {
+    'JWT': {
+        'type': 'apiKey',
+        'in': 'header',
+        'name': 'Authorization',
+        'description': 'Provide as: Bearer <token>'
+    }
+}
+
+# Initialize Flask-RESTX for API docs and future namespacing
+api = Api(
+    app,
+    version=os.getenv("APP_VERSION", "1.0.0"),
+    title="BeatDroid API",
+    description="API for generating posters and utilities.",
+    doc=os.getenv("API_DOCS_PATH", "/docs"),  # Swagger UI served here
+    authorizations=authorizations,
+    security='JWT',
+)
+
+# Define API namespaces (paths preserved as in legacy routes)
+auth_ns = api.namespace('auth', path='/auth', description='Authentication')
+poster_ns = api.namespace('poster', path='/', description='Poster generation')
+files_ns = api.namespace('files', path='/', description='File retrieval')
+utility_ns = api.namespace('utility', path='/', description='Utility and health')
+
+# Helper to ensure Flask-RESTX doesn't try to JSON-serialize Flask Response objects
+from flask import Response as FlaskResponse
+
+def _ensure_response(result):
+    """Normalize endpoint return values for Flask-RESTX.
+    - If a tuple (Response, status) is returned, convert to a single Response with status set.
+    - Otherwise, return the result unchanged so RESTX can handle (data, status) or plain data.
+    """
+    try:
+        if isinstance(result, tuple) and len(result) == 2:
+            body, status = result
+            # Detect Flask Response-like objects without importing Werkzeug directly
+            if isinstance(body, FlaskResponse) or hasattr(body, 'status_code') and hasattr(body, 'get_data'):
+                body.status_code = status
+                return body
+    except Exception:
+        # If normalization fails, fall back to the original result
+        return result
+    return result
+
+# ---------- RESTX Models (Request Bodies) ----------
+# Authentication
+auth_login_model = api.model('AuthLogin', {
+    'device_id': fields.String(required=True, description='Unique device identifier')
+})
+
+# Poster generation (album)
+album_poster_model = api.model('GenerateAlbumPoster', {
+    'album_name': fields.String(required=True, description='Album name'),
+    'artist_name': fields.String(required=True, description='Artist name'),
+    'theme': fields.String(required=False, description='Poster theme (optional)'),
+    'accent': fields.String(required=False, description='Accent color (optional)'),
+    'custom_cover': fields.String(required=False, description='Base64-encoded image to override album art (optional)')
+})
+
+# Poster generation (track)
+track_poster_model = api.model('GenerateTrackPoster', {
+    'track_name': fields.String(required=True, description='Track name'),
+    'artist_name': fields.String(required=True, description='Artist name'),
+    'theme': fields.String(required=False, description='Poster theme (optional)'),
+    'accent': fields.String(required=False, description='Accent color (optional)'),
+    'custom_cover': fields.String(required=False, description='Base64-encoded image to override album art (optional)')
+})
+
+# File retrieval
+get_poster_model = api.model('GetPoster', {
+    'filename': fields.String(required=True, description='Relative path of file previously generated')
+})
+
+# ---------- Common documented responses (exceptions) ----------
+COMMON_ERROR_RESPONSES = {
+    400: 'Validation Error (e.g., missing required parameters)',
+    401: 'Missing or invalid JWT',
+    404: 'Resource not found (album/track/file)',
+    429: 'Rate limit exceeded',
+    500: 'Internal Server Error'
+}
+
+# RESTX Resources wrapping existing function-based views
+@auth_ns.route('/login')
+class LoginResource(Resource):
+    @auth_ns.doc(security=[], responses={400: 'Missing required parameters', 500: 'Internal Server Error'})
+    @auth_ns.expect(auth_login_model, validate=False)
+    def post(self):
+        return _ensure_response(login())
+
+    def options(self):
+        return '', 204
+
+@poster_ns.route('/generate_album_poster')
+class GenerateAlbumPosterResource(Resource):
+    @poster_ns.doc(responses=COMMON_ERROR_RESPONSES)
+    @poster_ns.expect(album_poster_model, validate=False)
+    def post(self):
+        return _ensure_response(generate_album_endpoint())
+
+    def options(self):
+        return '', 204
+
+@poster_ns.route('/generate_track_poster')
+class GenerateTrackPosterResource(Resource):
+    @poster_ns.doc(responses=COMMON_ERROR_RESPONSES)
+    @poster_ns.expect(track_poster_model, validate=False)
+    def post(self):
+        return _ensure_response(generate_track_endpoint())
+
+    def options(self):
+        return '', 204
+
+@files_ns.route('/get_poster')
+class GetPosterResource(Resource):
+    @files_ns.doc(responses=COMMON_ERROR_RESPONSES)
+    @files_ns.expect(get_poster_model, validate=False)
+    def post(self):
+        return _ensure_response(get_poster())
+
+    def options(self):
+        return '', 204
+
+@utility_ns.route('/health')
+class HealthResource(Resource):
+    @utility_ns.doc(security=[], responses={503: 'Unhealthy', 500: 'Internal Server Error'})
+    def get(self):
+        return _ensure_response(health_check())
+
+@utility_ns.route('/swagger.json')
+class SwaggerYamlResource(Resource):
+    @utility_ns.doc(security=[], responses={500: 'Failed to generate OpenAPI schema'})
+    def get(self):
+        return _ensure_response(get_swagger())
 
 # Device model
 class Device(db.Model):
@@ -262,7 +398,6 @@ except Exception as e:
     raise
 
 # --------- Authentication ---------
-@app.route('/auth/login', methods=['POST', 'OPTIONS'])
 @sentry_transaction("auth_login")
 @handle_errors
 def login():
@@ -339,7 +474,6 @@ def login():
                 }), 201
 
 # --------- Poster Generation (Synchronous) ---------
-@app.route('/generate_album_poster', methods=['POST', 'OPTIONS'])
 @jwt_required()
 @sentry_transaction("generate_album_poster")
 @handle_errors
@@ -433,7 +567,6 @@ def generate_album_endpoint():
         
         return jsonify(**response_data), 200
 
-@app.route('/generate_track_poster', methods=['POST', 'OPTIONS'])
 @jwt_required()
 @sentry_transaction("generate_track_poster")
 @handle_errors
@@ -554,7 +687,6 @@ def generate_track_endpoint():
         return jsonify(**response_data), 200
 
 # --------- File Serving ---------
-@app.route('/get_poster', methods=['POST', 'OPTIONS'])
 @jwt_required()
 @sentry_transaction("get_poster")
 @handle_errors
@@ -623,20 +755,22 @@ def get_poster():
                 }), 200
 
 # --------- Protected Endpoint Example ---------
-@app.route('/protected', methods=['GET'])
-@jwt_required()
-@sentry_transaction("protected_endpoint")
-def protected():
-    user_id = get_jwt_identity()
-    sentry_sdk.set_user({"id": user_id})
-    sentry_sdk.add_breadcrumb(
-        message=f"Protected endpoint accessed by user: {user_id}",
-        level="info"
-    )
-    return jsonify(message="This is a protected route.")
+@sentry_transaction("swagger_json")
+def get_swagger():
+    """Return auto-generated OpenAPI schema from Flask-RESTX (JSON)."""
+    try:
+        # Flask-RESTX exposes the schema via api.__schema__
+        return jsonify(api.__schema__), 200
+    except Exception as e:
+        logger.error(f"Failed to generate schema: {str(e)}")
+        sentry_sdk.capture_exception(e)
+        return jsonify({
+            "success": False,
+            "error": "Failed to generate OpenAPI schema",
+        }), 500
+
 
 # --------- Health Check Endpoint ---------
-@app.route('/health', methods=['GET'])
 @sentry_transaction("health_check")
 def health_check():
     """Health check endpoint for monitoring"""
