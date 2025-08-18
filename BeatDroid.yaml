@@ -1,0 +1,322 @@
+swagger: "2.0"
+info:
+  title: BeatDroid API
+  description: Swagger specification for BeatDroid Flask API.
+  version: 1.0.0
+basePath: /
+schemes:
+  - http
+  - https
+consumes:
+  - application/json
+produces:
+  - application/json
+tags:
+  - name: Authentication
+    description: Endpoints related to authentication and token issuance
+  - name: Poster
+    description: Endpoints for generating posters
+  - name: Files
+    description: Endpoints for retrieving generated files
+  - name: Utility
+    description: Miscellaneous utility endpoints
+securityDefinitions:
+  JWT:
+    type: apiKey
+    name: Authorization
+    in: header
+    description: |
+      Provide the JWT as a Bearer token in the Authorization header.
+      Example: "Authorization: Bearer <your_token_here>"
+paths:
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Authenticate a device and obtain a JWT
+      description: Returns a JWT for the provided device_id. If the device is new, it is registered and a token is created.
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/AuthRequest'
+      responses:
+        200:
+          description: Existing device authenticated successfully
+          schema:
+            $ref: '#/definitions/AuthResponse'
+        201:
+          description: New device registered and authenticated successfully
+          schema:
+            $ref: '#/definitions/AuthResponse'
+        400:
+          description: Missing or invalid parameters
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /generate_album_poster:
+    post:
+      tags: [Poster]
+      summary: Generate an album poster
+      description: Generates an album poster synchronously and returns the relative file path and blurhash.
+      security:
+        - JWT: []
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/AlbumPosterRequest'
+      responses:
+        200:
+          description: Album poster generated successfully
+          schema:
+            $ref: '#/definitions/PosterResponseAlbum'
+        400:
+          description: Missing required parameters
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        401:
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        404:
+          description: Album not found
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /generate_track_poster:
+    post:
+      tags: [Poster]
+      summary: Generate a track poster
+      description: Generates a track poster synchronously (with lyrics if available) and returns the relative file path and blurhash.
+      security:
+        - JWT: []
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/TrackPosterRequest'
+      responses:
+        200:
+          description: Track poster generated successfully
+          schema:
+            $ref: '#/definitions/PosterResponseTrack'
+        400:
+          description: Missing required parameters
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        401:
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        404:
+          description: Track not found
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /get_poster:
+    post:
+      tags: [Files]
+      summary: Retrieve a generated poster image
+      description: Reads the generated image by filename and returns it as a base64-encoded string. Attempts to delete the file afterward.
+      security:
+        - JWT: []
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/GetPosterRequest'
+      responses:
+        200:
+          description: Image retrieved (file may be deleted or deletion may fail with warning)
+          schema:
+            $ref: '#/definitions/GetPosterResponse'
+        400:
+          description: Missing required parameters
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+        401:
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/ErrorResponse'
+  /health:
+    get:
+      tags: [Utility]
+      summary: Health check
+      description: Returns the health status of the application.
+      responses:
+        200:
+          description: Healthy
+          schema:
+            $ref: '#/definitions/HealthStatusResponse'
+        503:
+          description: Unhealthy
+          schema:
+            $ref: '#/definitions/HealthStatusResponse'
+definitions:
+  AuthRequest:
+    type: object
+    required: [device_id]
+    properties:
+      device_id:
+        type: string
+        example: "abc123-device-id"
+  AuthResponse:
+    type: object
+    properties:
+      success:
+        type: boolean
+        example: true
+      message:
+        type: string
+        example: Device authenticated successfully
+      data:
+        type: object
+        properties:
+          access_token:
+            type: string
+            description: JWT access token
+          device_id:
+            type: string
+          is_new_device:
+            type: boolean
+  AlbumPosterRequest:
+    type: object
+    required: [album_name, artist_name]
+    properties:
+      album_name:
+        type: string
+        example: "Random Access Memories"
+      artist_name:
+        type: string
+        example: "Daft Punk"
+      theme:
+        type: string
+        description: Poster theme
+        example: "Light"
+      indexing:
+        type: boolean
+        default: false
+      accent:
+        type: boolean
+        default: false
+      custom_cover:
+        type: string
+        description: Optional custom cover image (URL or base64)
+  TrackPosterRequest:
+    type: object
+    required: [track_name, artist_name]
+    properties:
+      track_name:
+        type: string
+        example: "Get Lucky"
+      artist_name:
+        type: string
+        example: "Daft Punk"
+      theme:
+        type: string
+        example: "Light"
+      indexing:
+        type: boolean
+        default: false
+      accent:
+        type: boolean
+        default: false
+      custom_cover:
+        type: string
+        description: Optional custom cover image (URL or base64)
+  GetPosterRequest:
+    type: object
+    required: [filename]
+    properties:
+      filename:
+        type: string
+        description: Relative path returned by poster generation (e.g., tracks/xyz.png)
+        example: "tracks/get_lucky_123.png"
+  PosterResponseAlbum:
+    type: object
+    properties:
+      success:
+        type: boolean
+        example: true
+      message:
+        type: string
+        example: Album poster generated successfully!
+      data:
+        type: object
+        properties:
+          filePath:
+            type: string
+          blurhash:
+            type: string
+          type:
+            type: string
+            example: album_poster
+          albumName:
+            type: string
+          artistName:
+            type: string
+  PosterResponseTrack:
+    type: object
+    properties:
+      success:
+        type: boolean
+        example: true
+      message:
+        type: string
+        example: Track poster generated successfully!
+      data:
+        type: object
+        properties:
+          filePath:
+            type: string
+          blurhash:
+            type: string
+          type:
+            type: string
+            example: track_poster
+          trackName:
+            type: string
+          artistName:
+            type: string
+  GetPosterResponse:
+    type: object
+    properties:
+      success:
+        type: boolean
+        example: true
+      message:
+        type: string
+      warning:
+        type: string
+        description: Optional warning if file deletion failed
+      data:
+        type: object
+        properties:
+          image:
+            type: string
+            description: Base64-encoded image data
+          filename:
+            type: string
+  HealthStatusResponse:
+    type: object
+    properties:
+      success:
+        type: boolean
+        example: true
+      status:
+        type: string
+        enum: [healthy, unhealthy]
+      message:
+        type: string
+  ErrorResponse:
+    type: object
+    properties:
+      success:
+        type: boolean
+        example: false
+      error:
+        type: string
+      message:
+        type: string
+  

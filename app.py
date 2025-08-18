@@ -28,7 +28,7 @@ from sqlalchemy import text
 SENTRY_DSN = os.getenv("SENTRY_DSN");
 
 # Initialize Sentry only in production environment
-if (os.getenv('ENVIRONMENT') == 'production' and SENTRY_DSN != None):
+if os.getenv('ENVIRONMENT') == 'production' and SENTRY_DSN is not None:
     # Configure Sentry with comprehensive integrations
     sentry_logging = LoggingIntegration(
         level=logging.INFO,  # Capture info and above as breadcrumbs
@@ -216,7 +216,7 @@ db = SQLAlchemy(app)
 jwt = JWTManager(app)
 limiter = Limiter(get_remote_address, app=app, default_limits=["10000 per hour"])
 cache = Cache(app)
-swagger = Swagger(app)
+swagger = Swagger(app, template_file='BeatDroid.yaml')
 
 # Device model
 class Device(db.Model):
@@ -697,7 +697,7 @@ def forbidden(e):
 
 @app.errorhandler(404)
 def not_found(e):
-    sentry_sdk.capture_exception(e)
+    sentry_sdk.capture_message(f"The requested resource was not found: {str(e)}", level="warning")
     return jsonify({
         "success": False,
         "error": "Not Found",
