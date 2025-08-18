@@ -26,6 +26,7 @@ from functools import wraps
 from sqlalchemy import text
 
 SENTRY_DSN = os.getenv("SENTRY_DSN");
+APP_VERSION = os.getenv("APP_VERSION", "1.0.0");
 
 # Initialize Sentry only in production environment
 if os.getenv('ENVIRONMENT') == 'production' and SENTRY_DSN is not None:
@@ -57,7 +58,7 @@ if os.getenv('ENVIRONMENT') == 'production' and SENTRY_DSN is not None:
         # Set environment
         environment=os.getenv("ENVIRONMENT", "development"),
         # Set release
-        release=os.getenv("APP_VERSION", "1.0.0"),
+        release=APP_VERSION,
     )
 else:
     # Disable Sentry for non-production environments
@@ -229,7 +230,7 @@ authorizations = {
 # Initialize Flask-RESTX for API docs and future namespacing
 api = Api(
     app,
-    version=os.getenv("APP_VERSION", "1.0.0"),
+    version=APP_VERSION,
     title="BeatDroid API",
     description="API for generating posters and utilities.",
     doc=os.getenv("API_DOCS_PATH", "/docs"),  # Swagger UI served here
