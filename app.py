@@ -899,4 +899,4 @@ if __name__ == '__main__':
         message=f"Application starting on port {port}",
         level="info"
     )
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host='0.0.0.0', port=port, debug=(os.getenv('FLASK_ENV', 'development') == 'development'))
